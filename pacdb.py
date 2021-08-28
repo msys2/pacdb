@@ -204,7 +204,7 @@ class Package(object):
         optionalfor = []
         for pkgent in self.db.sources.values(): # TODO: somehow check other dbs?
             pkg = Package(self.db, pkgent)
-            if self.name in pkg.optdepends:
+            if self.name in pkg.optdepends or any(prov in pkg.optdepends for prov in self.provides):
                 optionalfor.append(pkg.name)
         return optionalfor
 
@@ -212,7 +212,8 @@ class Package(object):
         requiredby = []
         for pkgent in self.db.sources.values(): # TODO: somehow check other dbs?
             pkg = Package(self.db, pkgent)
-            if self.name in pkg.depends: # TODO: check version?
+            if self.name in pkg.depends or any(prov in pkg.depends for prov in self.provides):
+                # TODO: check version?
                 requiredby.append(pkg.name)
         return requiredby
 
