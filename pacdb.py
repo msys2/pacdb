@@ -93,9 +93,11 @@ class Package(object):
         self.db = db
         self._entry = entry
 
+    def _get_list_entry(self, name):
+        return self._entry.get(name, list())
+
     def _get_single_entry(self, name):
-        l = self._entry.get(name)
-        return l and l[0]
+        return self._entry.get(name, (None,))[0]
 
     @property
     def arch(self):
@@ -116,15 +118,15 @@ class Package(object):
 
     @property
     def checkdepends(self):
-        return _split_depends(self._entry.get('%CHECKDEPENDS%', list()))
+        return _split_depends(self._get_list_entry('%CHECKDEPENDS%'))
 
     @property
     def conflicts(self):
-        return _split_depends(self._entry.get('%CONFLICTS%', list()))
+        return _split_depends(self._get_list_entry('%CONFLICTS%'))
     
     @property
     def depends(self):
-        return _split_depends(self._entry.get('%DEPENDS%', list()))
+        return _split_depends(self._get_list_entry('%DEPENDS%'))
     
     @property
     def desc(self):
@@ -141,11 +143,11 @@ class Package(object):
     
     @property
     def files(self):
-        return self._entry.get('%FILES%', list())
+        return self._get_list_entry('%FILES%')
 
     @property
     def groups(self):
-        return self._entry.get('%GROUPS%', list())
+        return self._get_list_entry('%GROUPS%')
 
     @property
     def isize(self):
@@ -154,11 +156,11 @@ class Package(object):
 
     @property
     def licenses(self):
-        return self._entry.get('%LICENSE%', list())
+        return self._get_list_entry('%LICENSE%')
     
     @property
     def makedepends(self):
-        return _split_depends(self._entry.get('%MAKEDEPENDS%', list()))
+        return _split_depends(self._get_list_entry('%MAKEDEPENDS%'))
 
     @property
     def md5sum(self):
@@ -170,7 +172,7 @@ class Package(object):
 
     @property
     def optdepends(self):
-        return _split_optdepends(self._entry.get('%OPTDEPENDS%', list()))
+        return _split_optdepends(self._get_list_entry('%OPTDEPENDS%'))
 
     @property
     def packager(self):
@@ -178,11 +180,11 @@ class Package(object):
 
     @property
     def provides(self):
-        return _split_depends(self._entry.get('%PROVIDES%', list()))
+        return _split_depends(self._get_list_entry('%PROVIDES%'))
 
     @property
     def replaces(self):
-        return _split_depends(self._entry.get('%REPLACES%', list()))
+        return _split_depends(self._get_list_entry('%REPLACES%'))
 
     @property
     def sha256sum(self):
