@@ -3,33 +3,19 @@
 import datetime
 import re
 import tarfile
+from collections import namedtuple
 from typing import Dict, List, Set
 
 _PackageEntry = Dict[str, List[str]]
+_DependEntry = namedtuple('_DependEntry', ['name', 'mod', 'version', 'desc'])
+_DEPENDRE = re.compile(r'^(.*?)(?:(<=|>=|<|>|=)(.*?))?(?:: ([^:]+))?$')
 
-# Utility functions
-def _split_depends(deps: List[str]) -> Dict[str, Set[str]]:
+def _split_depends(deps: List[str]) -> Dict[str, Set[_DependEntry]]:
     r: Dict[str, Set[str]] = {}
     for d in deps:
-        parts = re.split("([<>=]+)", d, 1)
-        first = parts[0].strip()
-        second = "".join(parts[1:]).strip()
-        r.setdefault(first, set()).add(second)
+        entry = _DependEntry._make(_DEPENDRE.match(d).groups())
+        r.setdefault(entry.name, set()).add(entry)
     return r
-
-def _split_optdepends(deps: List[str]) -> Dict[str, Set[str]]:
-    r: Dict[str, Set[str]] = {}
-    for d in deps:
-        if ":" in d:
-            a, b = d.split(":", 1)
-            a, b = a.strip(), b.strip()
-        else:
-            a, b = d.strip(), ""
-        e = r.setdefault(a, set())
-        if b:
-            e.add(b)
-    return r
-
 
 class Database(object):
     def __init__(self, name: str, filename=None, fileobj=None):
@@ -172,7 +158,7 @@ class Package(object):
 
     @property
     def optdepends(self):
-        return _split_optdepends(self._get_list_entry('%OPTDEPENDS%'))
+        return _split_depends(self._get_list_entry('%OPTDEPENDS%'))
 
     @property
     def packager(self):
