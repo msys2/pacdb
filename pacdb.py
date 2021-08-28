@@ -8,12 +8,14 @@ from typing import Dict, List, Set
 
 _PackageEntry = Dict[str, List[str]]
 _DependEntry = namedtuple('_DependEntry', ['name', 'mod', 'version', 'desc'])
-_DEPENDRE = re.compile(r'^(.*?)(?:(<=|>=|<|>|=)(.*?))?(?:: ([^:]+))?$')
+_DEPENDRE = re.compile(r'^([^<>=]+)(?:(<=|>=|<|>|=)(.*))?$')
 
 def _split_depends(deps: List[str]) -> Dict[str, Set[_DependEntry]]:
-    r: Dict[str, Set[str]] = {}
+    r: Dict[str, Set[_DependEntry]] = {}
     for d in deps:
-        entry = _DependEntry._make(_DEPENDRE.match(d).groups())
+        e = d.rsplit(': ', 1)
+        desc = e[1] if len(e) > 1 else None
+        entry = _DependEntry(*_DEPENDRE.match(e[0]).groups(), desc)
         r.setdefault(entry.name, set()).add(entry)
     return r
 
