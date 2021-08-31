@@ -4,20 +4,131 @@ import datetime
 import re
 import tarfile
 from collections import namedtuple
-from typing import Dict, List, Set
+from itertools import zip_longest
+from typing import Dict, List, Set, Any, Tuple, Optional
+
+# Arch uses ':', MSYS2 uses '~'
+EPOCH_SEPS = frozenset(":~")
 
 _PackageEntry = Dict[str, List[str]]
 _DependEntry = namedtuple('_DependEntry', ['name', 'mod', 'version', 'desc'])
-_DEPENDRE = re.compile(r'^([^<>=]+)(?:(<=|>=|<|>|=)(.*))?$')
+_DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
 
 def _split_depends(deps: List[str]) -> Dict[str, Set[_DependEntry]]:
     r: Dict[str, Set[_DependEntry]] = {}
     for d in deps:
         e = d.rsplit(': ', 1)
         desc = e[1] if len(e) > 1 else None
-        entry = _DependEntry(*_DEPENDRE.match(e[0]).groups(), desc)
+        entry = _DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
         r.setdefault(entry.name, set()).add(entry)
     return r
+
+def vercmp(v1: str, v2: str) -> int:
+
+    def cmp(a: Any, b: Any) -> int:
+        return (a > b) - (a < b)
+
+    def split(v: str) -> Tuple[str, str, Optional[str]]:
+        m = re.split(r'(\D)', v, 1)
+        if len(m) == 3 and m[1] in EPOCH_SEPS:
+            e = m[0]
+            v = m[2]
+        else:
+            e = "0"
+
+        r: Optional[str] = None
+        rs = v.rsplit("-", 1)
+        if len(rs) == 2:
+            v, r = rs
+
+        return (e, v, r)
+
+    digit, alpha, other = range(3)
+
+    def get_type(c: str) -> int:
+        assert c
+        if c.isdigit():
+            return digit
+        elif c.isalpha():
+            return alpha
+        else:
+            return other
+
+    def parse(v: str) -> List[str]:
+        parts: List[str] = []
+        current = ""
+        for c in v:
+            if not current:
+                current += c
+            else:
+                if get_type(c) == get_type(current):
+                    current += c
+                else:
+                    parts.append(current)
+                    current = c
+
+        if current:
+            parts.append(current)
+
+        return parts
+
+    def rpmvercmp(v1: str, v2: str) -> int:
+        if v1 == v2:
+            return 0
+        for p1, p2 in zip_longest(parse(v1), parse(v2), fillvalue=None):
+            if p1 is None:
+                if get_type(p2) == alpha:
+                    return 1
+                return -1
+            elif p2 is None:
+                if get_type(p1) == alpha:
+                    return -1
+                return 1
+
+            t1 = get_type(p1)
+            t2 = get_type(p2)
+            if t1 != t2:
+                if t1 == digit:
+                    return 1
+                elif t2 == digit:
+                    return -1
+                elif t1 == other:
+                    return 1
+                elif t2 == other:
+                    return -1
+            elif t1 == other:
+                ret = cmp(len(p1), len(p2))
+                if ret != 0:
+                    return ret
+            elif t1 == digit:
+                ret = cmp(int(p1), int(p2))
+                if ret != 0:
+                    return ret
+            elif t1 == alpha:
+                ret = cmp(p1, p2)
+                if ret != 0:
+                    return ret
+
+        return 0
+
+    if v1 == v2:
+        return 0
+    elif v1 is None:
+        return -1
+    elif v2 is None:
+        return 1
+
+    e1, v1, r1 = split(v1)
+    e2, v2, r2 = split(v2)
+
+    ret = rpmvercmp(e1, e2)
+    if ret == 0:
+        ret = rpmvercmp(v1, v2)
+        if ret == 0 and r1 is not None and r2 is not None:
+            ret = rpmvercmp(r1, r2)
+
+    return ret
+
 
 class Database(object):
     def __init__(self, name: str, filename=None, fileobj=None):
