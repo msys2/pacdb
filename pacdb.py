@@ -8,6 +8,9 @@ from collections import namedtuple
 from itertools import zip_longest
 from typing import Dict, List, Set, Any, Tuple, Optional, Union, Iterator
 
+__all__ = ['Database', 'Package', 'Version', 'mingw_db_by_name',
+           'msys_db_by_arch', 'vercmp']
+
 # Arch uses ':', MSYS2 uses '~'
 EPOCH_SEPS = frozenset(":~")
 
@@ -199,7 +202,7 @@ class Version(object):
     def __hash__(self):
         return hash(self.canonicalize())
 
-    def canonicalize(self, epochsep=':') -> Optional[str]:
+    def canonicalize(self, epochsep: str=':') -> Optional[str]:
         if self.ver is None:
             return None
 
@@ -419,3 +422,10 @@ def mingw_db_by_name(name: str) -> Database:
     with urlopen('https://mirror.msys2.org/mingw/{0}/{0}.db'.format(name)) as u:
         with BytesIO(u.read()) as f:
             return Database(name, fileobj=f)
+
+def msys_db_by_arch(arch: str='x86_64') -> Database:
+    from urllib.request import urlopen
+    from io import BytesIO
+    with urlopen('https://mirror.msys2.org/msys/{0}/msys.db'.format(arch)) as u:
+        with BytesIO(u.read()) as f:
+            return Database("msys", fileobj=f)
