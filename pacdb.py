@@ -2,10 +2,11 @@
 
 import datetime
 import re
+import sys
 import tarfile
 from collections import namedtuple
 from itertools import zip_longest
-from typing import Dict, List, Set, Any, Tuple, Optional
+from typing import Dict, List, Set, Any, Tuple, Optional, Union, Iterator
 
 # Arch uses ':', MSYS2 uses '~'
 EPOCH_SEPS = frozenset(":~")
@@ -23,12 +24,26 @@ def _split_depends(deps: List[str]) -> Dict[str, Set[_DependEntry]]:
         r.setdefault(entry.name, set()).add(entry)
     return r
 
-def vercmp(v1: str, v2: str) -> int:
+class Version(object):
+    def __init__(self, ver: Union[str, "Version", None]):
+        super(Version, self).__init__()
+        if isinstance(ver, Version):
+            self.ver = ver.ver
+            self.e, self.v, self.r = ver.e, ver.v, ver.r
+        elif ver is not None:
+            self.ver = ver
+            self.e, self.v, self.r = self._split(ver)
+        else:
+            self.ver, self.e, self.v, self.r = (None, None, None, None)
 
-    def cmp(a: Any, b: Any) -> int:
-        return (a > b) - (a < b)
+    def __str__(self):
+        return str(self.ver)
 
-    def split(v: str) -> Tuple[str, str, Optional[str]]:
+    def __repr__(self):
+        return f'Version({repr(self.canonicalize())})'
+
+    @staticmethod
+    def _split(v: str) -> Tuple[str, str, Optional[str]]:
         m = re.split(r'(\D)', v, 1)
         if len(m) == 3 and m[1] in EPOCH_SEPS:
             e = m[0]
@@ -43,91 +58,172 @@ def vercmp(v1: str, v2: str) -> int:
 
         return (e, v, r)
 
-    digit, alpha, other = range(3)
+    class _ExtentType(object):
+        pass
 
-    def get_type(c: str) -> int:
+    _DIGIT, _ALPHA, _OTHER = _ExtentType(), _ExtentType(), _ExtentType()
+
+    @classmethod
+    def _get_type(cls, c: str) -> _ExtentType:
         assert c
         if c.isdigit():
-            return digit
+            return cls._DIGIT
         elif c.isalpha():
-            return alpha
+            return cls._ALPHA
         else:
-            return other
+            return cls._OTHER
 
-    def parse(v: str) -> List[str]:
-        parts: List[str] = []
+    @classmethod
+    def _parse(cls, v: str) -> Iterator[str]:
         current = ""
         for c in v:
             if not current:
                 current += c
             else:
-                if get_type(c) == get_type(current):
+                if cls._get_type(c) is cls._get_type(current):
                     current += c
                 else:
-                    parts.append(current)
+                    yield current
                     current = c
 
         if current:
-            parts.append(current)
+            yield current
 
-        return parts
-
-    def rpmvercmp(v1: str, v2: str) -> int:
+    @classmethod
+    def _rpmvercmp(cls, v1: str, v2: str) -> int:
         if v1 == v2:
             return 0
-        for p1, p2 in zip_longest(parse(v1), parse(v2), fillvalue=None):
+
+        def cmp(a: Any, b: Any) -> int:
+            return (a > b) - (a < b)
+
+        for p1, p2 in zip_longest(cls._parse(v1), cls._parse(v2), fillvalue=None):
             if p1 is None:
-                if get_type(p2) == alpha:
+                if cls._get_type(p2) is cls._ALPHA:
                     return 1
                 return -1
             elif p2 is None:
-                if get_type(p1) == alpha:
+                if cls._get_type(p1) is cls._ALPHA:
                     return -1
                 return 1
 
-            t1 = get_type(p1)
-            t2 = get_type(p2)
-            if t1 != t2:
-                if t1 == digit:
+            t1 = cls._get_type(p1)
+            t2 = cls._get_type(p2)
+            if t1 is not t2:
+                if t1 is cls._DIGIT:
                     return 1
-                elif t2 == digit:
+                elif t2 is cls._DIGIT:
                     return -1
-                elif t1 == other:
+                elif t1 is cls._OTHER:
                     return 1
-                elif t2 == other:
+                elif t2 is cls._OTHER:
                     return -1
-            elif t1 == other:
+            elif t1 is cls._OTHER:
                 ret = cmp(len(p1), len(p2))
                 if ret != 0:
                     return ret
-            elif t1 == digit:
+            elif t1 is cls._DIGIT:
                 ret = cmp(int(p1), int(p2))
                 if ret != 0:
                     return ret
-            elif t1 == alpha:
+            elif t1 is cls._ALPHA:
                 ret = cmp(p1, p2)
                 if ret != 0:
                     return ret
 
         return 0
 
-    if v1 == v2:
-        return 0
-    elif v1 is None:
-        return -1
-    elif v2 is None:
-        return 1
+    def vercmp(self, other: Union[str, "Version", None]) -> Union[int, type(NotImplemented)]:
+        if isinstance(other, Version):
+            if self.ver == other.ver:
+                return 0
+        elif isinstance(other, str):
+            if self.ver == other:
+                return 0
+            other = Version(other)
+        elif other is None:
+            return 1 if self.ver is not None else 0
+        else:
+            return NotImplemented
 
-    e1, v1, r1 = split(v1)
-    e2, v2, r2 = split(v2)
+        if self.ver is None:
+            return -1
+        elif other.ver is None:
+            return 1
 
-    ret = rpmvercmp(e1, e2)
-    if ret == 0:
-        ret = rpmvercmp(v1, v2)
-        if ret == 0 and r1 is not None and r2 is not None:
-            ret = rpmvercmp(r1, r2)
+        ret = self._rpmvercmp(self.e, other.e)
+        if ret == 0:
+            ret = self._rpmvercmp(self.v, other.v)
+            if ret == 0 and self.r is not None and other.r is not None:
+                ret = self._rpmvercmp(self.r, other.r)
 
-    return ret
+        return ret
+
+    __cmp__ = vercmp
+
+    def __lt__(self, other: Union[str, "Version", None]):
+        if not isinstance(other, (str, Version, type(None))):
+            return NotImplemented
+        return self.vercmp(other) < 0
+
+    def __le__(self, other: Union[str, "Version", None]):
+        if not isinstance(other, (str, Version, type(None))):
+            return NotImplemented
+        return self.vercmp(other) <= 0
+
+    def __eq__(self, other: Union[str, "Version", None]):
+        if not isinstance(other, (str, Version, type(None))):
+            return NotImplemented
+        return self.vercmp(other) == 0
+
+    def __gt__(self, other: Union[str, "Version", None]):
+        if not isinstance(other, (str, Version, type(None))):
+            return NotImplemented
+        return self.vercmp(other) > 0
+
+    def __ge__(self, other: Union[str, "Version", None]):
+        if not isinstance(other, (str, Version, type(None))):
+            return NotImplemented
+        return self.vercmp(other) >= 0
+
+    # this should actually be impossible due to type annotations
+    if sys.version_info[0] < 3:
+        def __ne__(self, other: Union[str, "Version", None]):
+            if not isinstance(other, (str, Version, type(None))):
+                return NotImplemented
+            return not self == other
+
+    def __bool__(self):
+        return self.ver is not None
+
+    def __hash__(self):
+        return hash(self.canonicalize())
+
+    def canonicalize(self, epochsep=':') -> Optional[str]:
+        if self.ver is None:
+            return None
+
+        v = ""
+        if self.e != "0":
+            v = self.e.lstrip('0') + epochsep
+
+        for p in self._parse(self.v):
+            t = self._get_type(p)
+            if t is self._OTHER:
+                v += "."
+            elif t is self._DIGIT:
+                v += p.lstrip('0')
+            else:
+                v += p
+
+        if self.r is not None:
+            v += "-" + self.r.lstrip('0')
+
+        return v
+
+
+def vercmp(v1: str, v2: str) -> int:
+    return Version(v1).vercmp(v2)
 
 
 class Database(object):
