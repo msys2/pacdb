@@ -13,17 +13,18 @@ __all__ = ['Database', 'Package', 'Version', 'mingw_db_by_name',
 
 # Arch uses ':', MSYS2 uses '~'
 EPOCH_SEPS = frozenset(":~")
+DependEntry = namedtuple('DependEntry', ['name', 'mod', 'version', 'desc'])
+Depends = Dict[str, Set[DependEntry]]
 
 _PackageEntry = Dict[str, List[str]]
-_DependEntry = namedtuple('_DependEntry', ['name', 'mod', 'version', 'desc'])
 _DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
 
-def _split_depends(deps: List[str]) -> Dict[str, Set[_DependEntry]]:
-    r: Dict[str, Set[_DependEntry]] = {}
+def _split_depends(deps: List[str]) -> Depends:
+    r: Depends = {}
     for d in deps:
         e = d.rsplit(': ', 1)
         desc = e[1] if len(e) > 1 else None
-        entry = _DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
+        entry = DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
         r.setdefault(entry.name, set()).add(entry)
     return r
 
@@ -261,11 +262,22 @@ class Database(object):
         for p in self.sources.values():
             self.byname[p['%NAME%'][0]] = p
 
-    def get_pkg(self, pkgname: str):
+    @classmethod
+    def from_url(cls, name: str, url: str, dbtype: str="db") -> "Database":
+        from urllib.request import urlopen
+        from io import BytesIO
+        if url[-1] != '/':
+            url += '/'
+        url += ".".join((name, dbtype))
+        with urlopen(url) as u:
+            with BytesIO(u.read()) as f:
+                return cls(name, fileobj=f)
+
+    def get_pkg(self, pkgname: str) -> "Package":
         entry = self.byname.get(pkgname)
         return entry and Package(self, entry)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator["Package"]:
         return (Package(self, entry) for entry in self.sources.values())
 
     @staticmethod
@@ -294,112 +306,112 @@ class Package(object):
         self.db = db
         self._entry = entry
 
-    def _get_list_entry(self, name):
+    def _get_list_entry(self, name: str) -> List[str]:
         return self._entry.get(name, list())
 
-    def _get_single_entry(self, name):
+    def _get_single_entry(self, name: str) -> Optional[str]:
         return self._entry.get(name, (None,))[0]
 
     @property
-    def arch(self):
+    def arch(self) -> Optional[str]:
         return self._get_single_entry('%ARCH%')
 
     @property
-    def base(self):
+    def base(self) -> Optional[str]:
         return self._get_single_entry('%BASE%')
 
     @property
-    def base64_sig(self):
+    def base64_sig(self) -> Optional[str]:
         return self._get_single_entry('%PGPSIG%')
     
     @property
-    def builddate(self):
+    def builddate(self) -> Optional[datetime.datetime]:
         d = self._get_single_entry('%BUILDDATE%')
         return d and datetime.datetime.utcfromtimestamp(int(d))
 
     @property
-    def checkdepends(self):
+    def checkdepends(self) -> Depends:
         return _split_depends(self._get_list_entry('%CHECKDEPENDS%'))
 
     @property
-    def conflicts(self):
+    def conflicts(self) -> Depends:
         return _split_depends(self._get_list_entry('%CONFLICTS%'))
     
     @property
-    def depends(self):
+    def depends(self) -> Depends:
         return _split_depends(self._get_list_entry('%DEPENDS%'))
     
     @property
-    def desc(self):
+    def desc(self) -> Optional[str]:
         return self._get_single_entry('%DESC%')
 
     @property
-    def download_size(self):
+    def download_size(self) -> Optional[int]:
         d = self._get_single_entry('%CSIZE%')
         return d and int(d)
 
     @property
-    def filename(self):
+    def filename(self) -> str:
         return self._entry['%FILENAME%'][0]
     
     @property
-    def files(self):
+    def files(self) -> List[str]:
         return self._get_list_entry('%FILES%')
 
     @property
-    def groups(self):
+    def groups(self) -> List[str]:
         return self._get_list_entry('%GROUPS%')
 
     @property
-    def isize(self):
+    def isize(self) -> Optional[int]:
         d = self._get_single_entry('%ISIZE%')
         return d and int(d)
 
     @property
-    def licenses(self):
+    def licenses(self) -> List[str]:
         return self._get_list_entry('%LICENSE%')
     
     @property
-    def makedepends(self):
+    def makedepends(self) -> Depends:
         return _split_depends(self._get_list_entry('%MAKEDEPENDS%'))
 
     @property
-    def md5sum(self):
+    def md5sum(self) -> Optional[str]:
         return self._get_single_entry('%MD5SUM%')
 
     @property
-    def name(self):
+    def name(self) -> str:
         return self._entry['%NAME%'][0]
 
     @property
-    def optdepends(self):
+    def optdepends(self) -> Depends:
         return _split_depends(self._get_list_entry('%OPTDEPENDS%'))
 
     @property
-    def packager(self):
+    def packager(self) -> Optional[str]:
         return self._get_single_entry('%PACKAGER%')
 
     @property
-    def provides(self):
+    def provides(self) -> Depends:
         return _split_depends(self._get_list_entry('%PROVIDES%'))
 
     @property
-    def replaces(self):
+    def replaces(self) -> Depends:
         return _split_depends(self._get_list_entry('%REPLACES%'))
 
     @property
-    def sha256sum(self):
+    def sha256sum(self) -> Optional[str]:
         return self._get_single_entry('%SHA256SUM%')
 
     size = download_size
 
     @property
-    def url(self):
+    def url(self) -> Optional[str]:
         return self._get_single_entry('%URL%')
 
     @property
-    def version(self):
-        return self._entry['%VERSION%'][0]
+    def version(self) -> Version:
+        return Version(self._entry['%VERSION%'][0])
 
     def compute_optionalfor(self) -> List[str]:
         optionalfor = []
@@ -419,16 +431,8 @@ class Package(object):
         return requiredby
 
 
-def mingw_db_by_name(name: str) -> Database:
-    from urllib.request import urlopen
-    from io import BytesIO
-    with urlopen('https://mirror.msys2.org/mingw/{0}/{0}.db'.format(name)) as u:
-        with BytesIO(u.read()) as f:
-            return Database(name, fileobj=f)
+def mingw_db_by_name(name: str, dbtype: str="db") -> Database:
+    return Database.from_url(name, 'https://mirror.msys2.org/mingw/{}'.format(name), dbtype)
 
-def msys_db_by_arch(arch: str='x86_64') -> Database:
-    from urllib.request import urlopen
-    from io import BytesIO
-    with urlopen('https://mirror.msys2.org/msys/{0}/msys.db'.format(arch)) as u:
-        with BytesIO(u.read()) as f:
-            return Database("msys", fileobj=f)
+def msys_db_by_arch(arch: str='x86_64', dbtype: str="db") -> Database:
+    return Database.from_url('msys', 'https://mirror.msys2.org/msys/{}'.format(arch), dbtype)
