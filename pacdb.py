@@ -265,6 +265,9 @@ class Database(object):
         entry = self.byname.get(pkgname)
         return entry and Package(self, entry)
 
+    def __iter__(self):
+        return (Package(self, entry) for entry in self.sources.values())
+
     @staticmethod
     def _parse_desc(t: str) -> _PackageEntry:
         d: _PackageEntry = {}
