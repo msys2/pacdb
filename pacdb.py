@@ -32,13 +32,12 @@ class Version(object):
     def __init__(self, ver: Union[str, "Version", None]):
         super(Version, self).__init__()
         if isinstance(ver, Version):
-            self.ver = ver.ver
-            self.e, self.v, self.r = ver.e, ver.v, ver.r
+            self.ver, self.e, self.v, self.r = ver.ver, ver.e, ver.v, ver.r
         elif ver is not None:
             self.ver = ver
             self.e, self.v, self.r = self._split(ver)
         else:
-            self.ver, self.e, self.v, self.r = (None, None, None, None)
+            self.ver, self.e, self.v, self.r = None, None, None, None
 
     def __str__(self):
         return str(self.ver)
@@ -78,20 +77,23 @@ class Version(object):
             return cls._OTHER
 
     @classmethod
-    def _parse(cls, v: str) -> Iterator[str]:
+    def _parse(cls, v: str) -> Iterator[Tuple[str, _ExtentType]]:
         current = ""
+        current_type = None
         for c in v:
             if not current:
                 current += c
+                current_type = cls._get_type(current)
             else:
-                if cls._get_type(c) is cls._get_type(current):
+                ctype = cls._get_type(c)
+                if ctype is current_type:
                     current += c
                 else:
-                    yield current
-                    current = c
+                    yield (current, current_type)
+                    current, current_type = c, ctype
 
         if current:
-            yield current
+            yield (current, current_type)
 
     @classmethod
     def _rpmvercmp(cls, v1: str, v2: str) -> int:
@@ -101,18 +103,16 @@ class Version(object):
         def cmp(a: Any, b: Any) -> int:
             return (a > b) - (a < b)
 
-        for p1, p2 in zip_longest(cls._parse(v1), cls._parse(v2), fillvalue=None):
+        for (p1, t1), (p2, t2) in zip_longest(cls._parse(v1), cls._parse(v2), fillvalue=(None, None)):
             if p1 is None:
-                if cls._get_type(p2) is cls._ALPHA:
+                if t2 is cls._ALPHA:
                     return 1
                 return -1
             elif p2 is None:
-                if cls._get_type(p1) is cls._ALPHA:
+                if t1 is cls._ALPHA:
                     return -1
                 return 1
 
-            t1 = cls._get_type(p1)
-            t2 = cls._get_type(p2)
             if t1 is not t2:
                 if t1 is cls._DIGIT:
                     return 1
@@ -211,8 +211,7 @@ class Version(object):
         if self.e != "0":
             v = self.e.lstrip('0') + epochsep
 
-        for p in self._parse(self.v):
-            t = self._get_type(p)
+        for p, t in self._parse(self.v):
             if t is self._OTHER:
                 v += "."
             elif t is self._DIGIT:
