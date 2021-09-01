@@ -280,6 +280,9 @@ class Database(object):
     def __iter__(self) -> Iterator["Package"]:
         return (Package(self, entry) for entry in self.sources.values())
 
+    def __repr__(self) -> str:
+        return super(Database, self).__repr__()[:-1] + f": {self.name}>"
+
     @staticmethod
     def _parse_desc(t: str) -> _PackageEntry:
         d: _PackageEntry = {}
@@ -305,6 +308,47 @@ class Package(object):
         super(Package, self).__init__()
         self.db = db
         self._entry = entry
+
+    def __str__(self) -> str:
+        return "-".join((self.name, str(self.version)))
+
+    def __repr__(self) -> str:
+        return super(Package, self).__repr__()[:-1] + f": {str(self)} from {str(self.db)}>"
+
+    def __eq__(self, other) -> bool:
+        if isinstance(other, Package):
+            return self.name == other.name and self.version == other.version
+        return NotImplemented
+
+    def __lt__(self, other) -> bool:
+        if isinstance(other, Package):
+            return (self.name, self.version) < (other.name, other.version)
+        return NotImplemented
+
+    def __le__(self, other) -> bool:
+        if isinstance(other, Package):
+            return (self.name, self.version) <= (other.name, other.version)
+        return NotImplemented
+
+    def __gt__(self, other) -> bool:
+        if isinstance(other, Package):
+            return (self.name, self.version) > (other.name, other.version)
+        return NotImplemented
+
+    def __ge__(self, other) -> bool:
+        if isinstance(other, Package):
+            return (self.name, self.version) >= (other.name, other.version)
+        return NotImplemented
+
+    # this should actually be impossible due to type annotations
+    if sys.version_info[0] < 3:
+        def __ne__(self, other):
+            if isinstance(other, Package):
+                return not self == other
+            return NotImplemented
+
+    def __hash__(self):
+        return hash((self.name, self.version))
 
     def _get_list_entry(self, name: str) -> List[str]:
         return self._entry.get(name, list())
