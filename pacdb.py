@@ -468,10 +468,11 @@ class Package(object):
         return Version(self._entry['%VERSION%'][0])
 
     def compute_rdepends(self, dependattr: str='depends') -> List[str]:
-        ret = []
+        ret: List[str] = []
+        provs = self.provides.keys()
         for pkg in self.db: # TODO: somehow check other dbs?
             deps = getattr(pkg, dependattr)
-            if self.name in deps or any(prov in deps for prov in self.provides):
+            if self.name in deps or (provs & deps.keys()):
                 # TODO: check version?
                 ret.append(pkg.name)
         return ret
