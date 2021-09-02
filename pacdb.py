@@ -215,15 +215,14 @@ class Version(object):
             if t is self._OTHER:
                 v += "."
             elif t is self._DIGIT:
-                v += p.lstrip('0')
+                v += (p.lstrip('0') or '0')
             else:
                 v += p
 
         if self.r is not None:
-            v += "-" + self.r.lstrip('0')
+            v += "-" + (self.r.lstrip('0') or '0')
 
         return v
-
 
 def vercmp(v1: str, v2: str) -> int:
     return Version(v1).vercmp(v2)
