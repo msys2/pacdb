@@ -467,21 +467,20 @@ class Package(object):
     def version(self) -> Version:
         return Version(self._entry['%VERSION%'][0])
 
-    def compute_optionalfor(self) -> List[str]:
-        optionalfor = []
+    def compute_rdepends(self, dependattr: str='depends') -> List[str]:
+        ret = []
         for pkg in self.db: # TODO: somehow check other dbs?
-            if self.name in pkg.optdepends or any(prov in pkg.optdepends for prov in self.provides):
+            deps = getattr(pkg, dependattr)
+            if self.name in deps or any(prov in deps for prov in self.provides):
                 # TODO: check version?
-                optionalfor.append(pkg.name)
-        return optionalfor
+                ret.append(pkg.name)
+        return ret
+
+    def compute_optionalfor(self) -> List[str]:
+        return self.compute_rdepends('optdepends')
 
     def compute_requiredby(self) -> List[str]:
-        requiredby = []
-        for pkg in self.db: # TODO: somehow check other dbs?
-            if self.name in pkg.depends or any(prov in pkg.depends for prov in self.provides):
-                # TODO: check version?
-                requiredby.append(pkg.name)
-        return requiredby
+        return self.compute_rdepends('depends')
 
 
 def mingw_db_by_name(name: str, dbtype: str="db") -> Database:
