@@ -472,7 +472,7 @@ class Package(object):
         provs = self.provides.keys()
         for pkg in self.db: # TODO: somehow check other dbs?
             deps = getattr(pkg, dependattr)
-            if self.name in deps or (provs & deps.keys()):
+            if self.name in deps or not provs.isdisjoint(deps.keys()):
                 # TODO: check version?
                 ret.append(pkg.name)
         return ret
