@@ -219,7 +219,7 @@ def vercmp(v1: str, v2: str) -> int:
 
 class DependEntry(namedtuple('DependEntry', ['name', 'mod', 'version_str', 'desc'])):
     @property
-    def version(self) -> Version:
+    def version(self) -> Optional[Version]:
         if hasattr(self, '_version'):
             return self._version
         if self.version_str is not None:
