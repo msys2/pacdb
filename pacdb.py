@@ -13,20 +13,9 @@ __all__ = ['Database', 'Package', 'Version', 'mingw_db_by_name',
 
 # Arch uses ':', MSYS2 uses '~'
 EPOCH_SEPS = frozenset(":~")
-DependEntry = namedtuple('DependEntry', ['name', 'mod', 'version', 'desc'])
-Depends = Dict[str, Set[DependEntry]]
 
 _PackageEntry = Dict[str, List[str]]
 _DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
-
-def _split_depends(deps: List[str]) -> Depends:
-    r: Depends = {}
-    for d in deps:
-        e = d.rsplit(': ', 1)
-        desc = e[1] if len(e) > 1 else None
-        entry = DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
-        r.setdefault(entry.name, set()).add(entry)
-    return r
 
 class Version(object):
     def __init__(self, ver: Union[str, "Version", None]):
@@ -226,6 +215,29 @@ class Version(object):
 
 def vercmp(v1: str, v2: str) -> int:
     return Version(v1).vercmp(v2)
+
+
+class DependEntry(namedtuple('DependEntry', ['name', 'mod', 'version_str', 'desc'])):
+    @property
+    def version(self) -> Version:
+        if hasattr(self, '_version'):
+            return self._version
+        if self.version_str is not None:
+            self._version = Version(self.version_str)
+        else:
+            self._version = None
+        return self._version
+
+Depends = Dict[str, Set[DependEntry]]
+
+def _split_depends(deps: List[str]) -> Depends:
+    r: Depends = {}
+    for d in deps:
+        e = d.rsplit(': ', 1)
+        desc = e[1] if len(e) > 1 else None
+        entry = DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
+        r.setdefault(entry.name, set()).add(entry)
+    return r
 
 
 class Database(object):
