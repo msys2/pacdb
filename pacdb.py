@@ -18,6 +18,11 @@ _PackageEntry = Dict[str, List[str]]
 _DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
 
 class Version(object):
+    ver: Optional[str]
+    e: str
+    v: str
+    r: Optional[str]
+
     def __init__(self, ver: Union[str, "Version", None]):
         super(Version, self).__init__()
         if isinstance(ver, Version):
@@ -26,7 +31,7 @@ class Version(object):
             self.ver = ver
             self.e, self.v, self.r = self._split(ver)
         else:
-            self.ver, self.e, self.v, self.r = None, None, None, None
+            self.ver, self.e, self.v, self.r = None, None, None, None # type: ignore
 
     def __str__(self):
         return str(self.ver)
@@ -68,7 +73,7 @@ class Version(object):
     @classmethod
     def _parse(cls, v: str) -> Iterator[Tuple[str, _ExtentType]]:
         current = ""
-        current_type = None
+        current_type = cls._OTHER
         for c in v:
             if not current:
                 current += c
@@ -126,7 +131,7 @@ class Version(object):
 
         return 0
 
-    def vercmp(self, other: Union[str, "Version", None]) -> Union[int, type(NotImplemented)]:
+    def vercmp(self, other) -> Union[int, type(NotImplemented)]: # type: ignore
         if isinstance(other, Version):
             if self.ver == other.ver:
                 return 0
@@ -154,34 +159,34 @@ class Version(object):
 
     __cmp__ = vercmp
 
-    def __lt__(self, other: Union[str, "Version", None]):
+    def __lt__(self, other):
         if not isinstance(other, (str, Version, type(None))):
             return NotImplemented
         return self.vercmp(other) < 0
 
-    def __le__(self, other: Union[str, "Version", None]):
+    def __le__(self, other):
         if not isinstance(other, (str, Version, type(None))):
             return NotImplemented
         return self.vercmp(other) <= 0
 
-    def __eq__(self, other: Union[str, "Version", None]):
+    def __eq__(self, other):
         if not isinstance(other, (str, Version, type(None))):
             return NotImplemented
         return self.vercmp(other) == 0
 
-    def __gt__(self, other: Union[str, "Version", None]):
+    def __gt__(self, other):
         if not isinstance(other, (str, Version, type(None))):
             return NotImplemented
         return self.vercmp(other) > 0
 
-    def __ge__(self, other: Union[str, "Version", None]):
+    def __ge__(self, other):
         if not isinstance(other, (str, Version, type(None))):
             return NotImplemented
         return self.vercmp(other) >= 0
 
     # this should actually be impossible due to type annotations
     if sys.version_info[0] < 3:
-        def __ne__(self, other: Union[str, "Version", None]):
+        def __ne__(self, other):
             if not isinstance(other, (str, Version, type(None))):
                 return NotImplemented
             return not self == other
@@ -218,6 +223,8 @@ def vercmp(v1: str, v2: str) -> int:
 
 
 class DependEntry(namedtuple('DependEntry', ['name', 'mod', 'version_str', 'desc'])):
+    _version: Optional[Version]
+
     @property
     def version(self) -> Optional[Version]:
         if hasattr(self, '_version'):
@@ -235,7 +242,7 @@ def _split_depends(deps: List[str]) -> Depends:
     for d in deps:
         e = d.rsplit(': ', 1)
         desc = e[1] if len(e) > 1 else None
-        entry = DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc)
+        entry = DependEntry(*_DEPENDRE.fullmatch(e[0]).groups(), desc) # type: ignore
         r.setdefault(entry.name, set()).add(entry)
     return r
 
@@ -283,9 +290,11 @@ class Database(object):
             with BytesIO(u.read()) as f:
                 return cls(name, fileobj=f)
 
-    def get_pkg(self, pkgname: str) -> "Package":
+    def get_pkg(self, pkgname: str) -> Optional["Package"]:
         entry = self.byname.get(pkgname)
-        return entry and Package(self, entry)
+        if entry is not None:
+            return Package(self, entry)
+        return None
 
     def __iter__(self) -> Iterator["Package"]:
         return (Package(self, entry) for entry in self.sources.values())
@@ -377,11 +386,13 @@ class Package(object):
     @property
     def base64_sig(self) -> Optional[str]:
         return self._get_single_entry('%PGPSIG%')
-    
+
     @property
     def builddate(self) -> Optional[datetime.datetime]:
         d = self._get_single_entry('%BUILDDATE%')
-        return d and datetime.datetime.utcfromtimestamp(int(d))
+        if d is not None:
+            return datetime.datetime.utcfromtimestamp(int(d))
+        return None
 
     @property
     def checkdepends(self) -> Depends:
@@ -390,11 +401,11 @@ class Package(object):
     @property
     def conflicts(self) -> Depends:
         return _split_depends(self._get_list_entry('%CONFLICTS%'))
-    
+
     @property
     def depends(self) -> Depends:
         return _split_depends(self._get_list_entry('%DEPENDS%'))
-    
+
     @property
     def desc(self) -> Optional[str]:
         return self._get_single_entry('%DESC%')
@@ -402,12 +413,14 @@ class Package(object):
     @property
     def download_size(self) -> Optional[int]:
         d = self._get_single_entry('%CSIZE%')
-        return d and int(d)
+        if d is not None:
+            return int(d)
+        return None
 
     @property
     def filename(self) -> str:
         return self._entry['%FILENAME%'][0]
-    
+
     @property
     def files(self) -> List[str]:
         return self._get_list_entry('%FILES%')
@@ -419,12 +432,14 @@ class Package(object):
     @property
     def isize(self) -> Optional[int]:
         d = self._get_single_entry('%ISIZE%')
-        return d and int(d)
+        if d is not None:
+            return int(d)
+        return None
 
     @property
     def licenses(self) -> List[str]:
         return self._get_list_entry('%LICENSE%')
-    
+
     @property
     def makedepends(self) -> Depends:
         return _split_depends(self._get_list_entry('%MAKEDEPENDS%'))
@@ -472,7 +487,7 @@ class Package(object):
         provs = self.provides.keys()
         for pkg in self.db: # TODO: somehow check other dbs?
             deps = getattr(pkg, dependattr)
-            if self.name in deps or not provs.isdisjoint(deps.keys()):
+            if self.name in deps or not provs.isdisjoint(deps.keys()): # pylint: disable=no-member
                 # TODO: check version?
                 ret.append(pkg.name)
         return ret
