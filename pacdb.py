@@ -19,41 +19,35 @@ _DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
 
 class Version(object):
     ver: Optional[str]
-    e: str
-    v: str
-    r: Optional[str]
+    evr: Optional[Tuple[str, str, Optional[str]]]
 
     def __init__(self, ver: Union[str, "Version", None]):
         super(Version, self).__init__()
         if isinstance(ver, Version):
-            self.ver, self.e, self.v, self.r = ver.ver, ver.e, ver.v, ver.r
-        elif ver is not None:
-            self.ver = ver
-            self.e, self.v, self.r = self._split(ver)
+            self.ver, self.evr = ver.ver, ver.evr
+        elif ver is None:
+            self.ver, self.evr = None, None
         else:
-            self.ver, self.e, self.v, self.r = None, None, None, None # type: ignore
+            self.ver = ver
+            m = re.split(r'(\D)', ver, 1)
+            if len(m) == 3 and m[1] in EPOCH_SEPS:
+                e = m[0]
+                ver = m[2]
+            else:
+                e = "0"
+
+            r: Optional[str] = None
+            rs = ver.rsplit("-", 1)
+            if len(rs) == 2:
+                ver, r = rs
+
+            self.evr = (e, ver, r)
 
     def __str__(self):
         return str(self.ver)
 
     def __repr__(self):
         return f'Version({repr(self.canonicalize())})'
-
-    @staticmethod
-    def _split(v: str) -> Tuple[str, str, Optional[str]]:
-        m = re.split(r'(\D)', v, 1)
-        if len(m) == 3 and m[1] in EPOCH_SEPS:
-            e = m[0]
-            v = m[2]
-        else:
-            e = "0"
-
-        r: Optional[str] = None
-        rs = v.rsplit("-", 1)
-        if len(rs) == 2:
-            v, r = rs
-
-        return (e, v, r)
 
     class _ExtentType(object):
         pass
@@ -91,9 +85,6 @@ class Version(object):
 
     @classmethod
     def _rpmvercmp(cls, v1: str, v2: str) -> int:
-        if v1 == v2:
-            return 0
-
         def cmp(a: Any, b: Any) -> int:
             return (a > b) - (a < b)
 
@@ -144,16 +135,18 @@ class Version(object):
         else:
             return NotImplemented
 
-        if self.ver is None:
+        if self.evr == other.evr:
+            return 0
+        elif self.evr is None:
             return -1
-        elif other.ver is None:
+        elif other.evr is None:
             return 1
 
-        ret = self._rpmvercmp(self.e, other.e)
+        ret = self._rpmvercmp(self.evr[0], other.evr[0])
         if ret == 0:
-            ret = self._rpmvercmp(self.v, other.v)
-            if ret == 0 and self.r is not None and other.r is not None:
-                ret = self._rpmvercmp(self.r, other.r)
+            ret = self._rpmvercmp(self.evr[1], other.evr[1])
+            if ret == 0 and self.evr[2] is not None and other.evr[2] is not None:
+                ret = self._rpmvercmp(self.evr[2], other.evr[2])
 
         return ret
 
@@ -192,20 +185,20 @@ class Version(object):
             return not self == other
 
     def __bool__(self):
-        return self.ver is not None
+        return self.evr is not None
 
     def __hash__(self):
         return hash(self.canonicalize())
 
     def canonicalize(self, epochsep: str=':') -> Optional[str]:
-        if self.ver is None:
+        if self.evr is None:
             return None
 
         v = ""
-        if self.e != "0":
-            v = self.e.lstrip('0') + epochsep
+        if self.evr[0] != "0":
+            v = self.evr[0].lstrip('0') + epochsep
 
-        for p, t in self._parse(self.v):
+        for p, t in self._parse(self.evr[1]):
             if t is self._OTHER:
                 v += "."
             elif t is self._DIGIT:
@@ -213,8 +206,8 @@ class Version(object):
             else:
                 v += p
 
-        if self.r is not None:
-            v += "-" + (self.r.lstrip('0') or '0')
+        if self.evr[2] is not None:
+            v += "-" + (self.evr[2].lstrip('0') or '0')
 
         return v
 
@@ -227,12 +220,11 @@ class DependEntry(namedtuple('DependEntry', ['name', 'mod', 'version_str', 'desc
 
     @property
     def version(self) -> Optional[Version]:
-        if hasattr(self, '_version'):
-            return self._version
-        if self.version_str is not None:
-            self._version = Version(self.version_str)
-        else:
-            self._version = None
+        if not hasattr(self, '_version'):
+            if self.version_str is not None:
+                self._version = Version(self.version_str)
+            else:
+                self._version = None
         return self._version
 
 Depends = Dict[str, Set[DependEntry]]
