@@ -122,7 +122,7 @@ class Version(object):
 
         return 0
 
-    def vercmp(self, other) -> Union[int, type(NotImplemented)]: # type: ignore
+    def vercmp(self, other: Union["Version", str, None]) -> int:
         if isinstance(other, Version):
             if self.ver == other.ver:
                 return 0
