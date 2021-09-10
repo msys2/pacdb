@@ -187,6 +187,8 @@ class Version(object):
     def __bool__(self):
         return self.evr is not None
 
+    __nonzero__ = __bool__
+
     def __hash__(self):
         return hash(self.canonicalize())
 
