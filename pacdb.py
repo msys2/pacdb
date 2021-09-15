@@ -247,8 +247,8 @@ class Database(object):
         self.name = name
         self.sources: Dict[str, _PackageEntry] = {}
         packages: Dict[str, list] = {}
-        with tarfile.open(name=filename, fileobj=fileobj, mode="r:*") as tar:
-            for info in tar.getmembers():
+        with tarfile.open(name=filename, fileobj=fileobj, mode="r|*") as tar:
+            for info in tar:
                 package_name = info.name.split("/", 1)[0]
                 infofile = tar.extractfile(info)
                 if infofile is None:
@@ -276,13 +276,11 @@ class Database(object):
     @classmethod
     def from_url(cls, name: str, url: str, dbtype: str="db") -> "Database":
         from urllib.request import urlopen
-        from io import BytesIO
         if url[-1] != '/':
             url += '/'
         url += ".".join((name, dbtype))
-        with urlopen(url) as u:
-            with BytesIO(u.read()) as f:
-                return cls(name, fileobj=f)
+        with urlopen(url) as f:
+            return cls(name, fileobj=f)
 
     def get_pkg(self, pkgname: str) -> Optional["Package"]:
         entry = self.byname.get(pkgname)
