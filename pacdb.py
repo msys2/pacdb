@@ -246,7 +246,7 @@ class Database(object):
         super(Database, self).__init__()
         self.name = name
         self.sources: Dict[str, _PackageEntry] = {}
-        packages: Dict[str, list] = {}
+        packages: Dict[str, List[Tuple[str, bytes]]] = {}
         with tarfile.open(name=filename, fileobj=fileobj, mode="r|*") as tar:
             for info in tar:
                 package_name = info.name.split("/", 1)[0]
@@ -265,8 +265,7 @@ class Database(object):
                     t += data.decode("utf-8")
                 elif name.endswith("/files"):
                     t += data.decode("utf-8")
-            desc = self._parse_desc(t)
-            self.sources[package_name] = desc
+            self.sources[package_name] = self._parse_desc(t)
 
         # make a handy-dandy mapping
         self.byname: Dict[str, _PackageEntry] = {}
