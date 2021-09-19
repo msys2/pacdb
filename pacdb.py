@@ -245,7 +245,8 @@ class Database(object):
     def __init__(self, name: str, filename=None, fileobj=None):
         super(Database, self).__init__()
         self.name = name
-        self.sources: Dict[str, _PackageEntry] = {}
+        self.url: Optional[str] = None
+        self.byname: Dict[str, _PackageEntry] = {}
         packages: Dict[str, List[Tuple[str, bytes]]] = {}
         with tarfile.open(name=filename, fileobj=fileobj, mode="r|*") as tar:
             for info in tar:
@@ -265,21 +266,20 @@ class Database(object):
                     t += data.decode("utf-8")
                 elif name.endswith("/files"):
                     t += data.decode("utf-8")
-            self.sources[package_name] = self._parse_desc(t)
-
-        # make a handy-dandy mapping
-        self.byname: Dict[str, _PackageEntry] = {}
-        for p in self.sources.values():
-            self.byname[p['%NAME%'][0]] = p
+            desc = self._parse_desc(t)
+            self.byname[desc['%NAME%'][0]] = desc
 
     @classmethod
     def from_url(cls, name: str, url: str, dbtype: str="db") -> "Database":
         from urllib.request import urlopen
         if url[-1] != '/':
             url += '/'
+        base_url = url
         url += ".".join((name, dbtype))
         with urlopen(url) as f:
-            return cls(name, fileobj=f)
+            db = cls(name, fileobj=f)
+            db.url = base_url
+            return db
 
     def get_pkg(self, pkgname: str) -> Optional["Package"]:
         entry = self.byname.get(pkgname)
@@ -288,7 +288,13 @@ class Database(object):
         return None
 
     def __iter__(self) -> Iterator["Package"]:
-        return (Package(self, entry) for entry in self.sources.values())
+        return (Package(self, entry) for entry in self.byname.values())
+
+    def __contains__(self, pkg_or_name: Union[str, "Package"]) -> bool:
+        if isinstance(pkg_or_name, Package):
+            return pkg_or_name.name in self.byname
+        else:
+            return pkg_or_name in self.byname
 
     def __repr__(self) -> str:
         return super(Database, self).__repr__()[:-1] + f": {self.name}>"
