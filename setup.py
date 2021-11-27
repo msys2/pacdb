@@ -27,7 +27,7 @@ REQUIRED = [
 
 # What packages are optional?
 EXTRAS = {
-    # 'fancy feature': ['django'],
+    'zstd-compressed database support': ['zstandard'],
 }
 
 # The rest you shouldn't have to touch too much :)

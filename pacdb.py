@@ -17,6 +17,43 @@ EPOCH_SEPS = frozenset(":~")
 _PackageEntry = Dict[str, List[str]]
 _DEPENDRE = re.compile(r'([^<>=]+)(?:(<=|>=|<|>|=)(.*))?')
 
+
+class ExtTarFile(tarfile.TarFile):
+    """Until Python's tarfile gets zstd support, this class extends it with
+       zstd support
+    """
+
+    @classmethod
+    def zstdopen(cls, name, mode="r", fileobj=None, cctx=None, dctx=None, **kwargs):
+        """Open zstd compressed tar archive name for reading or writing.
+           Appending is not allowed.
+        """
+        if mode not in ("r", "w", "x"):
+            raise ValueError("mode must be 'r', 'w' or 'x'")
+
+        try:
+            from zstandard import ZstdError, open as zstdopen
+        except ImportError:
+            raise tarfile.CompressionError("zstandard module is not available") from None
+
+        fileobj = zstdopen(fileobj or name, mode+"b", cctx=cctx, dctx=dctx)
+
+        try:
+            t = cls.taropen(name, mode, fileobj, **kwargs)
+        except (ZstdError, EOFError) as e:
+            fileobj.close()
+            if mode == 'r':
+                raise tarfile.ReadError("not a zstd file") from e
+            raise
+        except:
+            fileobj.close()
+            raise
+        t._extfileobj = False
+        return t
+
+    OPEN_METH = {"zstd": "zstdopen", **tarfile.TarFile.OPEN_METH}
+
+
 class Version(object):
     ver: Optional[str]
     evr: Optional[Tuple[str, str, Optional[str]]]
@@ -248,7 +285,10 @@ class Database(object):
         self.url: Optional[str] = None
         self.byname: Dict[str, _PackageEntry] = {}
         packages: Dict[str, List[Tuple[str, bytes]]] = {}
-        with tarfile.open(name=filename, fileobj=fileobj, mode="r|*") as tar:
+        # Unfortunately, tarfile doesn't provide exensiblity for transparent
+        # decompression in the |* mode, so use :* here (and require seekable
+        # fileobjs)
+        with ExtTarFile.open(name=filename, fileobj=fileobj, mode="r:*") as tar:
             for info in tar:
                 package_name = info.name.split("/", 1)[0]
                 infofile = tar.extractfile(info)
@@ -272,14 +312,16 @@ class Database(object):
     @classmethod
     def from_url(cls, name: str, url: str, dbtype: str="db") -> "Database":
         from urllib.request import urlopen
+        from io import BytesIO
         if url[-1] != '/':
             url += '/'
         base_url = url
         url += ".".join((name, dbtype))
-        with urlopen(url) as f:
-            db = cls(name, fileobj=f)
-            db.url = base_url
-            return db
+        with urlopen(url) as f, \
+             BytesIO(f.read()) as b:
+            db = cls(name, fileobj=b)
+        db.url = base_url
+        return db
 
     def get_pkg(self, pkgname: str) -> Optional["Package"]:
         entry = self.byname.get(pkgname)
@@ -483,7 +525,7 @@ class Package(object):
         ret: List[str] = []
         provs = self.provides.keys()
         for pkg in self.db: # TODO: somehow check other dbs?
-            deps = getattr(pkg, dependattr)
+            deps = getattr(pkg, dependattr) # type: Depends
             if self.name in deps or not provs.isdisjoint(deps.keys()): # pylint: disable=no-member
                 # TODO: check version?
                 ret.append(pkg.name)
