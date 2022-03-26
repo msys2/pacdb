@@ -519,7 +519,9 @@ class Package(object):
 
     @property
     def version(self) -> Version:
-        return Version(self._entry['%VERSION%'][0])
+        if not hasattr(self, '_version'):
+            self._version = Version(self._entry['%VERSION%'][0])
+        return self._version
 
     def compute_rdepends(self, dependattr: str='depends') -> List[str]:
         ret: List[str] = []
