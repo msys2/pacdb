@@ -525,7 +525,7 @@ class Package(object):
         ret: List[str] = []
         provs = self.provides.keys()
         for pkg in self.db: # TODO: somehow check other dbs?
-            deps = getattr(pkg, dependattr) # type: Depends
+            deps: Depends = getattr(pkg, dependattr)
             if self.name in deps or not provs.isdisjoint(deps.keys()): # pylint: disable=no-member
                 # TODO: check version?
                 ret.append(pkg.name)
