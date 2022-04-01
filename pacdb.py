@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
 import datetime
+import os
 import re
 import sys
 import tarfile
 from collections import namedtuple
 from itertools import zip_longest
-from typing import Dict, List, Set, Any, Tuple, Optional, Union, Iterator
+from typing import Dict, List, Set, Any, Tuple, Optional, Union, Iterator, Iterable
 
 __all__ = ['Database', 'Package', 'Version', 'mingw_db_by_name',
            'msys_db_by_arch', 'vercmp']
@@ -125,7 +126,8 @@ class Version(object):
         def cmp(a: Any, b: Any) -> int:
             return (a > b) - (a < b)
 
-        for (p1, t1), (p2, t2) in zip_longest(cls._parse(v1), cls._parse(v2), fillvalue=(None, None)):
+        for (p1, t1), (p2, t2) in zip_longest(cls._parse(v1), cls._parse(v2),
+                                                fillvalue=(None, None)):
             if p1 is None:
                 if t2 is cls._ALPHA:
                     return 1
@@ -362,10 +364,45 @@ class Database(object):
 
 
 class Package(object):
-    def __init__(self, db: Database, entry: _PackageEntry):
+    def __init__(self, db: Optional[Database], entry: _PackageEntry):
         super(Package, self).__init__()
+        self._version: Version
         self.db = db
         self._entry = entry
+
+    @classmethod
+    def from_file(cls, filename, fileobj=None) -> "Package":
+        files = set()
+        d: Optional[_PackageEntry] = None
+        # Unfortunately, tarfile doesn't provide exensiblity for transparent
+        # decompression in the |* mode, so use :* here (and require seekable
+        # fileobjs)
+        with ExtTarFile.open(name=filename, fileobj=fileobj, mode="r:*") as tar:
+            for info in tar:
+                if info.name == ".PKGINFO":
+                    infofile = tar.extractfile(info)
+                    if infofile is None:
+                        raise RuntimeError("Unable to extract .PKGINFO from package")
+                    with infofile:
+                        d = {'%FILENAME%': [os.path.basename(filename)]}
+                        for line in infofile.read().decode("utf-8").splitlines():
+                            line = line.strip()
+                            if line.startswith('#'):
+                                continue
+                            var, val = line.split(" = ", 1)
+                            val = re.sub(r'\s+', ' ', val)
+                            if var in cls._PKGINFO_MAPPING:
+                                d.setdefault(cls._PKGINFO_MAPPING[var], []).append(val)
+                elif not info.name.startswith('.'):
+                    if info.isdir():
+                        files.add(info.name + '/')
+                    else:
+                        files.add(info.name)
+        if not d:
+            raise RuntimeError("No .PKGINFO file in package")
+
+        d['%FILES%'] = sorted(files)
+        return cls(None, d)
 
     def __str__(self) -> str:
         return "-".join((self.name, str(self.version)))
@@ -523,21 +560,46 @@ class Package(object):
             self._version = Version(self._entry['%VERSION%'][0])
         return self._version
 
-    def compute_rdepends(self, dependattr: str='depends') -> List[str]:
-        ret: List[str] = []
+    def compute_rdepends(self, dependattr: str='depends',
+                            db: Optional[Iterable["Package"]] = None) -> List[str]:
+        db = db or self.db
+        if not db:
+            raise ValueError("One of db argument and self.db field must not be None")
+        ret: Set[str] = set()
         provs = self.provides.keys()
-        for pkg in self.db: # TODO: somehow check other dbs?
+        for pkg in db:
             deps: Depends = getattr(pkg, dependattr)
             if self.name in deps or not provs.isdisjoint(deps.keys()): # pylint: disable=no-member
                 # TODO: check version?
-                ret.append(pkg.name)
-        return ret
+                ret.add(pkg.name)
+        return list(ret)
 
-    def compute_optionalfor(self) -> List[str]:
-        return self.compute_rdepends('optdepends')
+    def compute_optionalfor(self, db: Optional[Iterable["Package"]] = None) -> List[str]:
+        return self.compute_rdepends('optdepends', db)
 
-    def compute_requiredby(self) -> List[str]:
-        return self.compute_rdepends('depends')
+    def compute_requiredby(self, db: Optional[Iterable["Package"]] = None) -> List[str]:
+        return self.compute_rdepends('depends', db)
+
+    _PKGINFO_MAPPING = {
+        'group':        '%GROUPS%',
+        'license':      '%LICENSE%',
+        'replaces':     '%REPLACES%',
+        'depend':       '%DEPENDS%',
+        'conflict':     '%CONFLICTS%',
+        'provides':     '%PROVIDES%',
+        'optdepend':    '%OPTDEPENDS%',
+        'makedepend':   '%MAKEDEPENDS%',
+        'checkdepend':  '%CHECKDEPENDS%',
+        'pkgname':      '%NAME%',
+        'pkgbase':      '%BASE%',
+        'pkgver':       '%VERSION%',
+        'pkgdesc':      '%DESC%',
+        'size':         '%ISIZE%',
+        'url':          '%URL%',
+        'arch':         '%ARCH%',
+        'builddate':    '%BUILDDATE%',
+        'packager':     '%PACKAGER%',
+    }
 
 
 def mingw_db_by_name(name: str, dbtype: str="db") -> Database:
