@@ -4,9 +4,14 @@ import pacdb
 
 build32 = pacdb.Database.from_url('build32', 'https://github.com/jeremyd2019/msys2-build32/releases/download/repo')
 msys64 = pacdb.msys_db_by_arch('x86_64')
+msys32 = pacdb.msys_db_by_arch('i686')
+
+
+combined32 = {pkg.name: pkg for pkg in msys32}
+combined32.update({pkg.name: pkg for pkg in build32})
 
 pkgs64 = {str(pkg): pkg for pkg in msys64}
-pkgs32 = {str(pkg): pkg for pkg in build32}
+pkgs32 = {str(pkg): pkg for pkg in combined32.values()}
 
 # HACK for rename of msys2-runtime-3.3 to msys2-runtime on i686
 pkgs32.update({k[:13] + "-3.3" + k[13:]: v for k, v in pkgs32.items() if v.name in ("msys2-runtime", "msys2-runtime-devel")})
