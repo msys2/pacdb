@@ -3,7 +3,7 @@ name = "pacdb"
 version = "0.2.0"
 description = "Pure-python module to parse and read pacman sync dbs."
 authors = [{ name = "Jeremy Drake", email = "github@jdrake.com" }]
-requires-python = ">=3.6.0,<4"
+requires-python = ">=3.9.0,<4"
 readme = "README.md"
 license = "MIT"
 dependencies = ["zstandard"]
